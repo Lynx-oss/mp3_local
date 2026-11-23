@@ -26,6 +26,7 @@ public class YoutubeClient {
                 "\"id\"\\s*:\\s*\"([^\"]+)\".*?"
                         + "\"title\"\\s*:\\s*\"([^\"]+)\".*?"
                         + "\"channelTitle\"\\s*:\\s*\"([^\"]+)\".*?"
+                        + "\"categoryId\"\\s*:\\s*\"([^\"]+)\".*?"
                         + "\"duration\"\\s*:\\s*\"([^\"]+)\"",
                 Pattern.DOTALL
 
@@ -36,8 +37,13 @@ public class YoutubeClient {
             String id = m.group(1);
             String title = unescapeJson(m.group(2));
             String artist = unescapeJson(m.group(3));
-            int duration = parseDuration(m.group(4));
+            String categoryId = m.group(4);
+            int duration = parseDuration(m.group(5));
             String source = "https://www.youtube.com/watch?v=" + id;
+
+            if(!"10".equals(categoryId)){
+                continue;
+            }
 
             out.add(new Track(id,title,artist,duration,source));
 
