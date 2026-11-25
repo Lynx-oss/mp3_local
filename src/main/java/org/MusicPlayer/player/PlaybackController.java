@@ -7,9 +7,16 @@ public class PlaybackController implements AutoCloseable{
     private final AudioPlayer player;
     private List<Track> queue = List.of();
     private int index = -1;
+    private Runnable onTrackChanged;
 
     public PlaybackController(AudioPlayer player) {
         this.player = player;
+        this.player.setOnTrackEnd(this::next);
+
+    }
+
+    public void setOnTrackChanged(Runnable onTrackChanged){
+        this.onTrackChanged = onTrackChanged;
     }
 
     public void setQueue(List<Track> tracks){
@@ -24,6 +31,9 @@ public class PlaybackController implements AutoCloseable{
         index = newIndex;
         player.load(queue.get(index).source());
         player.play();
+        if(onTrackChanged != null){
+            javax.swing.SwingUtilities.invokeLater(onTrackChanged);
+        }
     }
 
     public void togglePlayPause(){

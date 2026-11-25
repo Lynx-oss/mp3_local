@@ -11,6 +11,8 @@ public interface AudioPlayer  extends AutoCloseable{
 
     void setVolume(int percent);
 
+    void setOnTrackEnd(Runnable callback);
+
     boolean isPlaying();
 
     double position();

@@ -31,6 +31,7 @@ public class MpvAudioPlayer implements AudioPlayer {
     private volatile double position;
     private volatile double duration;
     private volatile boolean paused = true;
+    private volatile Runnable onTrackEnd;
 
     public MpvAudioPlayer() throws IOException {
         socketPath = Path.of(System.getProperty("java.io.tmpdir"),
@@ -83,6 +84,12 @@ public class MpvAudioPlayer implements AudioPlayer {
     public void setVolume(int percent) {
         int volume = Math.max(0, Math.min(100, percent));
         send("{\"command\":[\"set_property\",\"volume\"," + volume + "]}");
+    }
+
+    @Override
+    public void setOnTrackEnd(Runnable callback) {
+        this.onTrackEnd = callback;
+
     }
 
     @Override
@@ -177,6 +184,14 @@ public class MpvAudioPlayer implements AudioPlayer {
     }
 
     private void handle(String line) {
+        if (line.contains("\"event\":\"end-file\"") && line.contains("\"reason\":\"eof\"")){
+            Runnable cb = onTrackEnd;
+            if(cb != null){
+                cb.run();
+            }
+            return;
+        }
+
         Matcher m = PROPERTY.matcher(line);
         if (!m.find()) {
             return;

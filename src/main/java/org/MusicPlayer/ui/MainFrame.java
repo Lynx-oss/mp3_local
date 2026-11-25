@@ -50,6 +50,10 @@ public class MainFrame extends JFrame {
         });
 
         bar = new PlayerBar(controller, this::syncSelection);
+        controller.setOnTrackChanged(() -> {
+            syncSelection();
+            bar.refresh();
+        });
 
         add(new JScrollPane(table), BorderLayout.CENTER);
         add(bar, BorderLayout.SOUTH);
