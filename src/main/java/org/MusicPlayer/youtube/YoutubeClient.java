@@ -45,6 +45,14 @@ public class YoutubeClient {
                 continue;
             }
 
+            if(duration < 60 || title.toLowerCase().contains("#short")){
+                continue;
+            }
+
+            if(duration > 1200){
+                continue;
+            }
+
             out.add(new Track(id,title,artist,duration,source));
 
 
