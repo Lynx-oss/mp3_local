@@ -1,9 +1,7 @@
 package org.MusicPlayer.player;
 
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.UncheckedIOException;
+import java.io.*;
 import java.net.StandardProtocolFamily;
 import java.net.UnixDomainSocketAddress;
 import java.nio.ByteBuffer;
@@ -13,6 +11,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+
 
 /**
  * AudioPlayer basado en mpv. Lanza mpv sin video, en modo idle, y lo controla
@@ -24,9 +24,12 @@ public class MpvAudioPlayer implements AudioPlayer {
     private static final Pattern PROPERTY =
             Pattern.compile("\"name\":\"(time-pos|duration|pause)\",\"data\":([^,}]+)");
 
+    private static final boolean IS_WINDOWS = System.getProperty("os.name").toLowerCase().contains("win");
+
     private final Process process;
     private final Path socketPath;
     private final SocketChannel channel;
+    private final RandomAccessFile winPipe;
 
     private volatile double position;
     private volatile double duration;
@@ -34,24 +37,37 @@ public class MpvAudioPlayer implements AudioPlayer {
     private volatile Runnable onTrackEnd;
 
     public MpvAudioPlayer() throws IOException {
-        socketPath = Path.of(System.getProperty("java.io.tmpdir"),
-                "musicplayer-" + ProcessHandle.current().pid() + ".sock");
-        Files.deleteIfExists(socketPath);
+        long pid = ProcessHandle.current().pid();
+        String ipcTarget;
+            if (IS_WINDOWS) {
+                socketPath = null;
+                ipcTarget = "\\\\.\\pipe\\musicplayer-" + pid;
+            } else {
+                socketPath = Path.of(System.getProperty("java.io.tmpdir"), "musicplayer-" + pid + ".sock");
+                Files.deleteIfExists(socketPath);
+                ipcTarget = socketPath.toString();
+            }
 
-        process = new ProcessBuilder(
-                "mpv", "--no-video", "--no-config", "--no-terminal", "--idle=yes",
-                "--input-ipc-server=" + socketPath)
-                .redirectErrorStream(true)
-                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                .start();
+            process = new ProcessBuilder(
+                    "mpv", "--no-video", "--no-config", "--no-terminal", "--idle=yes",
+                    "--input-ipc-server=" + ipcTarget)
+                    .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            if (IS_WINDOWS) {
+                channel = null;
+                winPipe = connectWindowsPipe(ipcTarget);
+            } else {
+                winPipe = null;
+                channel = connectUnixSocket(socketPath);
+            }
+            startReader();
+            send("{\"command\":[\"observe_property\",1,\"time-pos\"]}");
+            send("{\"command\":[\"observe_property\",2,\"duration\"]}");
+            send("{\"command\":[\"observe_property\",3,\"pause\"]}");
+        }
 
-        channel = connect();
-        startReader();
 
-        send("{\"command\":[\"observe_property\",1,\"time-pos\"]}");
-        send("{\"command\":[\"observe_property\",2,\"duration\"]}");
-        send("{\"command\":[\"observe_property\",3,\"pause\"]}");
-    }
 
     // ---- AudioPlayer ----
 
@@ -122,29 +138,51 @@ public class MpvAudioPlayer implements AudioPlayer {
         }
     }
 
+        private SocketChannel connectUnixSocket(Path path) throws IOException {
+            for (int i = 0; i < 60; i++) {
+                if(Files.exists(path)){
+                    SocketChannel ch = SocketChannel.open(StandardProtocolFamily.UNIX);
+                    try{
+                        ch.connect(UnixDomainSocketAddress.of(path));
+                        return ch;
+                    } catch ( IOException e){
+                        ch.close();
+                    }
+                }
+                sleep(50);
 
-    /** mpv tarda un momento en crear el socket: reintentamos hasta ~3 segundos. */
-    private SocketChannel connect() throws IOException {
-        for (int i = 0; i < 60; i++) {
-            if (Files.exists(socketPath)) {
-                SocketChannel ch = SocketChannel.open(StandardProtocolFamily.UNIX);
-                try {
-                    ch.connect(UnixDomainSocketAddress.of(socketPath));
-                    return ch;
-                } catch (IOException e) {
-                    ch.close();
+            }
+            process.destroy();
+            throw  new IOException("No se pudo conectar con mpv por socket");
+
+            }
+
+
+        private RandomAccessFile connectWindowsPipe(String pipeName) throws IOException{
+         File pipeFile = new File(pipeName);
+            for (int i = 0; i < 60; i++) {
+
+                try{
+                    return new RandomAccessFile(pipeFile, "rw");
+                } catch (IOException e){
+                    sleep(50);
                 }
             }
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
+            process.destroy();
+            throw new IOException("No se pudo conectar con mpv por Name Pipe");
+
         }
-        process.destroy();
-        throw new IOException("No se pudo conectar con mpv (¿está instalado?)");
-    }
+
+        private void sleep(long millis){
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e){
+            Thread.currentThread().interrupt();
+        }
+        }
+
+
+
 
     private synchronized void send(String json) {
         try {

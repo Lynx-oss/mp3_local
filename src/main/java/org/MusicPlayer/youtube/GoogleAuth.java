@@ -142,6 +142,13 @@ public class GoogleAuth {
             return;
         } catch (Exception ignored) {
         }
+
+        try{
+            new ProcessBuilder("cmd", "/c", "start", url).start();
+            return;
+        } catch (Exception ignored){
+
+        }
         System.out.println("No se pudo abrir el navegador automáticamente. Abrí este enlace:");
         System.out.println(url);
     }
